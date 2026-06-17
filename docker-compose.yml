@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking
+      POSTGRES_DB: booking
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://booking:booking@db:5432/booking
+      CORS_ORIGINS: http://localhost:3000
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      # Optional integrations — set to go live (else dry-run):
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-booking-agent}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE: http://localhost:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+volumes:
+  db_data:

@@ -1,0 +1,18 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+*.db
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/coverage/
+
+# Env
+.env
+.ruff_cache/
+htmlcov/
+.coverage

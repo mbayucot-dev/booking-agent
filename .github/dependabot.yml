@@ -1,0 +1,17 @@
+# Weekly dependency PRs so security advisories (e.g. the open Next.js ones) get
+# surfaced and patched automatically instead of going stale.
+version: 2
+updates:
+  # Backend (FastAPI + LangGraph) — pyproject.toml lives in backend/.
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Frontend (Next.js) — package.json / package-lock.json live in frontend/.
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

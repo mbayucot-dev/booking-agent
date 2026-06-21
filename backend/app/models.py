@@ -63,7 +63,11 @@ class Run(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     thread_id: Mapped[str] = mapped_column(String(64), index=True, default=_uuid)
     status: Mapped[str] = mapped_column(String(32), default=RunStatus.running.value)
+    # Initiating principal (token identity, user-id, etc.) — ownership anchor for RBAC.
+    principal: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # pii: raw booking intent from the caller; encrypt at rest / redact in exports for production.
     raw_message: Mapped[str] = mapped_column(Text)
+    # pii: synthesised response; same data-classification requirements as raw_message.
     final_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
@@ -202,9 +206,9 @@ class Client(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Indexed: a returning customer is looked up by email (get-or-create) so we
-    # don't create a duplicate client row per booking.
-    email: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    # Unique: one client row per email address; NULLs are always distinct (no-email
+    # clients are created fresh).  The constraint backs the race-safe get-or-create.
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

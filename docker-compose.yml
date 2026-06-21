@@ -1,9 +1,17 @@
+# Development compose — credentials and ports are intentionally open for local use.
+# DO NOT expose this directly to the internet without:
+#   - rotating POSTGRES_PASSWORD / DATABASE_URL via a secret manager
+#   - setting API_AUTH_TOKEN and FRONTEND_ACCESS_KEY
+#   - placing TLS termination in front of the api and web services
+#   - configuring REDIS_URL for cross-replica event bus + rate limiting
+#   - setting ENVIRONMENT=production (enables CORS guard, disables API docs)
+
 services:
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: booking
-      POSTGRES_PASSWORD: booking
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-booking}
       POSTGRES_DB: booking
     ports:
       - "5432:5432"
@@ -14,6 +22,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   api:
     build: ./backend
@@ -21,9 +34,13 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://booking:booking@db:5432/booking
-      CORS_ORIGINS: http://localhost:3000
+      DATABASE_URL: postgresql+psycopg://booking:${POSTGRES_PASSWORD:-booking}@db:5432/booking
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      # Set in production to enforce bearer auth on every /runs call.
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
+      # Set to enable shared event bus + rate limiter across replicas.
+      REDIS_URL: ${REDIS_URL:-}
       # Optional integrations — set to go live (else dry-run):
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:-}
@@ -42,6 +59,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
 
   web:
     build:
@@ -51,8 +74,19 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    environment:
+      # Set to gate the BFF proxy behind a shared access key (see route.ts).
+      FRONTEND_ACCESS_KEY: ${FRONTEND_ACCESS_KEY:-}
+      BOOKING_AGENT_API_URL: http://api:8000
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN:-}
     ports:
       - "3000:3000"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
 
 volumes:
   db_data:

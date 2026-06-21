@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "langgraph>=0.2",
     "pydantic>=2",
-    "pydantic-settings>=2",
+    "pydantic-settings>=2.14.2",  # CVE fix: <2.14.2 vulnerable
     "sqlalchemy>=2",
     "alembic>=1.13",
     "python-dateutil>=2.8",
@@ -19,13 +19,19 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     # Shared event bus + rate limiter across replicas (used only when REDIS_URL is set).
     "redis>=5",
+    "msgpack>=1.2.1",  # CVE fix: <1.2.1 vulnerable (transitive via CacheControl)
 ]
 
 [project.optional-dependencies]
-llm = ["langchain-openai>=0.1", "openai>=1.0"]
+llm = [
+    "langchain-openai>=0.1",
+    "openai>=1.0",
+    "langsmith>=0.8.18",  # CVE fix: <0.8.18 vulnerable (transitive via langchain-core)
+    "pypdf>=6.13.3",      # CVE fix: <6.13.3 vulnerable (transitive via langchain stack)
+]
 # Durable LangGraph checkpointer (used only when DATABASE_URL is Postgres).
 postgres = ["psycopg[binary]>=3.1", "psycopg-pool>=3.1", "langgraph-checkpoint-postgres>=2"]
-dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "testcontainers>=4", "fakeredis>=2"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "testcontainers>=4", "fakeredis>=2", "hypothesis>=6"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

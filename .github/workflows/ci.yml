@@ -45,9 +45,37 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
-      - name: Test
-        run: npm test
+      - name: Test (with coverage gate)
+        run: npm run test:cov
       - name: Build
         run: npm run build
       - name: Security audit (prod deps, high+; dev tooling tracked by Dependabot)
         run: npm run security:audit
+
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Build
+        run: npm run build
+      - name: E2E tests (full booking flow, mocked API)
+        run: npm run test:e2e
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: frontend/test-results/
+          retention-days: 7

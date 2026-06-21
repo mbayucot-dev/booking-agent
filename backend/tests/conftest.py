@@ -3,8 +3,11 @@ booted once per session via testcontainers. Each test gets a clean database
 (all tables truncated), so suites are isolated without per-test containers.
 """
 
+import time
+
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 import app.models  # noqa: F401 — register all tables on Base.metadata
@@ -27,9 +30,21 @@ def pg_engine():
 
 def _truncate_all(engine) -> None:
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
-    if tables:
-        with engine.begin() as conn:
-            conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+    if not tables:
+        return
+    # TRUNCATE takes an ACCESS EXCLUSIVE lock on every table. A pooled app connection (used by
+    # a TestClient request) can still briefly hold a conflicting lock, which under CI load
+    # surfaces as a deadlock at teardown. Bound the wait with lock_timeout and retry the victim.
+    for attempt in range(5):
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+                conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+            return
+        except OperationalError:
+            if attempt == 4:
+                raise
+            time.sleep(0.25 * (attempt + 1))
 
 
 @pytest.fixture()

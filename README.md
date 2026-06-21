@@ -1,36 +1,37 @@
-# AI Booking Workflow
+# Booking Workflow
 
 A multi-agent booking workflow that turns a single chat message into a confirmed
-booking — with a human-in-the-loop approval gate before any mutation runs, and a
-live visual view of agent execution.
+booking. A human approval step runs before any mutation, and the UI shows the
+workflow as it executes.
 
 > *"Create a booking for John Doe for contact work on June 20 at 10am. Email
 > john@example.com, phone 0400000000, address 12 Queen St Brisbane."*
 
-A **LangGraph** supervisor orchestrates specialist agents (extraction →
-validation → customer → availability → planning → risk → **approval** →
-execution → email → audit → memory). An **LLM** parses the free-text request;
-booking data lives in this app's own database. Every node streams its status
-over **SSE** to a read-only **React Flow** canvas.
+A **LangGraph** supervisor orchestrates specialist agents for extraction,
+validation, customer lookup, availability, planning, risk review, approval,
+execution, email, audit, and memory. An **LLM** can parse the free-text request,
+with a deterministic fallback for local development. Booking data lives in this
+app's own database. Every node streams its status over **SSE** to a read-only
+**React Flow** canvas.
 
 ## Features
 
-- **Multi-agent orchestration** — a LangGraph supervisor graph routes between
+- **Multi-agent orchestration**: a LangGraph supervisor graph routes between
   specialist agents; each is independently testable and instrumented.
-- **Human-in-the-loop** — the graph literally **pauses** at approval via
-  LangGraph `interrupt()` + a checkpointer, then resumes on approve/reject. **No
-  mutation runs before approval.**
-- **LLM extraction with a safety net** — OpenAI structured-output parsing, with a
+- **Human-in-the-loop**: the graph pauses at approval via LangGraph
+  `interrupt()` + a checkpointer, then resumes on approve/reject. No mutation
+  runs before approval.
+- **LLM extraction with a safety net**: OpenAI structured-output parsing, with a
   deterministic rule parser as a fallback so it never hard-fails.
-- **Bounded availability search** — a sub-graph loops over staff/days (≤3
+- **Bounded availability search**: a sub-graph loops over staff/days (≤3
   attempts, ≤7-day window) to find and rank alternative slots.
-- **Best-cleaner selection** — the chosen cleaner is scored on **skill match**
+- **Cleaner selection**: the chosen cleaner is scored on **skill match**
   (can they do the service?), **workload** (balance the team), and **proximity**
   (home base → job, Haversine). The pick is deterministic + auditable; an
   optional LLM one-liner explains *why* on the approval card.
-- **Long-term memory** — durable customer facts (preferences, comms, VIP) are
+- **Long-term memory**: durable customer facts (preferences, comms, VIP) are
   saved and reloaded on the next run; logs/tool-output are never stored.
-- **Live visualization** — node statuses stream over SSE to a React Flow canvas
+- **Live visualization**: node statuses stream over SSE to a React Flow canvas
   as they execute.
 
 ### The agents
@@ -44,7 +45,7 @@ over **SSE** to a read-only **React Flow** canvas.
 | `job_planning_agent` | Plan the job + pick the best cleaner (skill / load / proximity) |
 | `risk_review_agent` | Flag risk (out-of-hours, unassigned) before approval |
 | `human_approval` | **Pauses** for a human; prepares (not executes) mutations |
-| `execution_agent` | The ONLY mutator — books client/contact/job/appointment |
+| `execution_agent` | The only mutator; books client/contact/job/appointment |
 | `hubspot_agent` | Push the customer contact to HubSpot CRM (post-approval, before payment) |
 | `email_agent` | SMTP confirmation email + calendar invite |
 | `audit_log` / `memory_agent` | Immutable audit trail; save durable customer facts |
@@ -74,8 +75,8 @@ docker compose up --build
 
 - Web UI: http://localhost:3000 · API docs: http://localhost:8000/docs
 
-With no keys set it runs fully in **dry-run** (rule-based extraction, DB
-booking, dry-run email) — no external services required.
+With no keys set it runs fully in **dry-run** mode with rule-based extraction,
+database booking, and dry-run email. No external services are required.
 
 ## Local development
 
@@ -127,7 +128,7 @@ curl -sX POST localhost:8000/api/v1/runs -H 'content-type: application/json' \
 # → 202 {"run_id":"bbb7af95…","status":"running", ...}
 ```
 
-**2. Watch it live** (SSE — what the React Flow canvas consumes):
+**2. Watch it live**. This is the SSE stream consumed by the React Flow canvas:
 
 ```bash
 curl -N localhost:8000/api/v1/runs/<run_id>/events
@@ -137,7 +138,7 @@ curl -N localhost:8000/api/v1/runs/<run_id>/events
 # event: end
 ```
 
-**3. Inspect the paused run** — agents have stopped at the approval gate and
+**3. Inspect the paused run**. Agents have stopped at the approval gate and
 prepared (but not executed) the booking:
 
 ```jsonc
@@ -167,7 +168,7 @@ curl -sX POST localhost:8000/api/v1/runs/<run_id>/approve -d '{"by":"ops@example
 # {"status":"completed","final_response":"Booking confirmed for John Doe on 2026-06-20 at 09:00. A confirmation email is on its way."}
 ```
 
-(Reject instead with `POST /runs/<run_id>/reject` — nothing is written.)
+(Reject instead with `POST /runs/<run_id>/reject`; nothing is written.)
 
 ## Testing
 
@@ -193,7 +194,7 @@ local database (default staff seeded on startup so jobs can be assigned).
 | `LANGSMITH_API_KEY` | LangSmith tracing of LLM calls (else off) |
 | `BUSINESS_OPEN_HOUR` / `CLOSE_HOUR` | Availability search window |
 | `CORS_ORIGINS`, `ENVIRONMENT` | CORS allow-list (defaults to the local frontend; a `*` wildcard is rejected in `production` and never paired with credentials); `production` also hides docs |
-| `API_AUTH_TOKEN` | When set, every `/runs` call requires `Authorization: Bearer <token>`, and the authenticated principal — not a client-supplied `by` — is recorded as the approver. Unset → open (dev). |
+| `API_AUTH_TOKEN` | When set, every `/runs` call requires `Authorization: Bearer <token>`, and the authenticated principal, not a client-supplied `by`, is recorded as the approver. Unset → open (dev). |
 | `RATE_LIMIT_RUNS` / `RATE_LIMIT_WINDOW_S` | In-process per-client rate limit on run submission (`0` disables) |
 | `LOG_LEVEL` | Root log level |
 | `DB_POOL_*` / `DB_STATEMENT_TIMEOUT_MS` | Connection pool sizing + a server-side per-query timeout |
@@ -215,4 +216,4 @@ storage.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

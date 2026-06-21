@@ -1,9 +1,7 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Send } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,31 +12,29 @@ export interface ChatBoxProps {
   pending?: boolean;
 }
 
-const schema = z.object({
-  message: z.string().trim().min(1, "Enter a booking request to continue."),
-});
+type ChatForm = { message: string };
 
-type ChatForm = z.infer<typeof schema>;
+const REQUIRED_MSG = "Enter a booking request to continue.";
 
 /**
- * Single-field booking form using RHF register() so the textarea value is
- * read from the DOM element directly at submit time. This avoids relying on
- * React's synthetic onChange event, which is not reliably fired for
- * programmatic input (Playwright fill) in production Next.js builds.
+ * Single-field booking form.
+ *
+ * Uses register() with RHF's built-in validation (no zodResolver) so that
+ * handleSubmit reads element.value from the DOM ref at submit time rather than
+ * from _formValues (the internal store that only updates via React's synthetic
+ * onChange). This makes the form work correctly under Playwright fill() in
+ * production Next.js builds where the synthetic event never fires.
  */
 export function ChatBox({ onSubmit, pending }: ChatBoxProps) {
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<ChatForm>({
-    resolver: zodResolver(schema),
-    defaultValues: { message: "" },
-  });
+  } = useForm<ChatForm>({ defaultValues: { message: "" } });
 
   return (
     <form
-      onSubmit={handleSubmit((values) => onSubmit(values.message.trim()))}
+      onSubmit={handleSubmit(({ message }) => onSubmit(message.trim()))}
       className="space-y-3"
     >
       <div className="space-y-2">
@@ -51,7 +47,10 @@ export function ChatBox({ onSubmit, pending }: ChatBoxProps) {
           className="resize-y"
           aria-describedby="message-desc"
           aria-invalid={!!errors.message}
-          {...register("message")}
+          {...register("message", {
+            required: REQUIRED_MSG,
+            validate: (v) => v.trim().length > 0 || REQUIRED_MSG,
+          })}
         />
         <p id="message-desc" className="text-[0.8rem] text-muted-foreground">
           Natural language — the agents extract the structured request.

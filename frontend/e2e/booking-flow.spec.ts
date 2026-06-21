@@ -126,10 +126,12 @@ async function mockApi(page: Page) {
   });
 
   // GET /api/v1/runs/:id/events → SSE stream (simulated with paused→completed events).
-  // Transition runState to PAUSED here so that when the stream ends and useRun
-  // refetches GET /runs/:id, it gets the paused snapshot (with approval_card).
+  // Transition runState to PAUSED only on the first stream (when status is still
+  // RUNNING). After approval the second stream opens; at that point runState is
+  // COMPLETED_RUN and must NOT be reset, otherwise the stream-end refetch would
+  // return PAUSED status and collapse isTerminal, detaching the "Start over" button.
   await page.route(`**/api/v1/runs/${RUN_ID}/events`, async (route) => {
-    runState = PAUSED_RUN;
+    if (runState === RUNNING_RUN) runState = PAUSED_RUN;
     const events = [
       'data: {"node":"chat_trigger","status":"success","duration_ms":10}\n\n',
       'data: {"node":"extract_booking_request","status":"success","duration_ms":120}\n\n',

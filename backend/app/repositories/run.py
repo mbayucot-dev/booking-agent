@@ -16,11 +16,19 @@ class RunRepository:
         self.session = session
 
     # --- runs ---
-    def create(self, *, run_id: str, thread_id: str | None = None, raw_message: str = "") -> Run:
+    def create(
+        self,
+        *,
+        run_id: str,
+        thread_id: str | None = None,
+        raw_message: str = "",
+        principal: str | None = None,
+    ) -> Run:
         run = Run(
             id=run_id,
             thread_id=thread_id or run_id,
             raw_message=raw_message,
+            principal=principal,
             status=RunStatus.running.value,
         )
         self.session.add(run)

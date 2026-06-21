@@ -37,12 +37,28 @@ class BookingRepository:
     def get_or_create_client(self, *, name, email, phone, address, commit: bool = True) -> Client:
         """Reuse the existing client for a known email; otherwise create.
 
-        Clients without an email are always created fresh."""
-        if email:
+        Clients without an email are always created fresh.
+
+        Uses insert-first to close the check-then-insert race: on IntegrityError
+        (uq_clients_email) we roll back, re-read the winner, and return it."""
+        if not email:
+            return self.create_client(
+                name=name, email=email, phone=phone, address=address, commit=commit
+            )
+        client = Client(name=name, email=email, phone=phone, address=address)
+        self.session.add(client)
+        try:
+            self.session.flush()
+            if commit:
+                self.session.commit()
+            return client
+        except IntegrityError:
+            # Concurrent writer inserted the same email first.
+            self.session.rollback()
             existing = self.session.scalar(select(Client).where(Client.email == email))
             if existing is not None:
                 return existing
-        return self.create_client(name=name, email=email, phone=phone, address=address, commit=commit)
+            raise
 
     def create_client(self, *, name, email, phone, address, commit: bool = True) -> Client:
         return self._persist(

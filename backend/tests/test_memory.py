@@ -1,5 +1,7 @@
 """Long-term memory: whitelist enforcement, store/repo, node, and load-on-run."""
 
+import pytest
+
 from app.graph.memory import (
     ALLOWED_MEMORY_TYPES,
     InMemoryMemoryStore,
@@ -61,6 +63,66 @@ def test_repository_upsert_updates_existing(Session):
         rows = repo.list_for("k")
     assert len(rows) == 1
     assert rows[0].content["last_service"] == "b"
+
+
+def test_repository_upsert_reraises_when_row_gone_after_conflict(Session):
+    """If the conflicting row disappears between the error and the re-read, the
+    IntegrityError is re-raised rather than silently swallowed."""
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import IntegrityError
+
+    with Session() as s:
+        repo = MemoryRepository(s)
+        calls = {"n": 0}
+        orig_commit = s.commit
+
+        def fake_commit():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                s.rollback()
+                raise IntegrityError("simulated", {}, Exception())
+            return orig_commit()
+
+        # After the error the re-read returns None (the conflicting row was deleted).
+        with patch.object(s, "commit", fake_commit), patch.object(s, "scalar", return_value=None):
+            with pytest.raises(IntegrityError):
+                repo.upsert("ghost-key", "preference", {"x": 1})
+
+
+def test_repository_upsert_insert_first_recovers_from_integrity_error(Session):
+    """On IntegrityError the upsert rolls back, re-reads the existing row, and
+    updates its content — simulating what happens after a concurrent INSERT."""
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import IntegrityError
+
+    with Session() as s:
+        repo = MemoryRepository(s)
+        # Seed the "winner" row that a concurrent writer would have inserted.
+        repo.upsert("race-key", "preference", {"round": 1})
+
+    # Now simulate a second caller: the session's commit raises IntegrityError
+    # (as if a concurrent INSERT beat it) and the code must recover gracefully.
+    with Session() as s:
+        repo = MemoryRepository(s)
+
+        original_commit = s.commit
+
+        called = {"n": 0}
+
+        def fake_commit():
+            called["n"] += 1
+            if called["n"] == 1:
+                # First commit raises IntegrityError to simulate the race.
+                s.rollback()
+                raise IntegrityError("simulated", {}, Exception())
+            return original_commit()
+
+        with patch.object(s, "commit", fake_commit):
+            result = repo.upsert("race-key", "preference", {"round": 2})
+
+    assert result.content["round"] == 2
 
 
 # --- node + load ----------------------------------------------------------

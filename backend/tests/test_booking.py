@@ -279,6 +279,65 @@ def test_clients_without_email_are_not_deduped(Session):
         assert s.query(Client).count() == 2
 
 
+def test_get_or_create_client_reraises_when_row_gone_after_conflict(Session):
+    """If the conflicting client row disappears between the error and the re-read,
+    the IntegrityError is re-raised rather than silently swallowed."""
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import IntegrityError
+
+    with Session() as s:
+        repo = BookingRepository(s)
+        calls = {"n": 0}
+        orig_flush = s.flush
+
+        def fake_flush(*a, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                s.rollback()
+                raise IntegrityError("simulated", {}, Exception())
+            return orig_flush(*a, **kw)
+
+        with patch.object(s, "flush", fake_flush), patch.object(s, "scalar", return_value=None):
+            with pytest.raises(IntegrityError):
+                repo.get_or_create_client(name="Ghost", email="ghost@x.com", phone="1", address="z")
+
+
+def test_get_or_create_client_insert_first_recovers_from_race(Session):
+    """On IntegrityError (uq_clients_email) the method rolls back and returns
+    the row that a concurrent writer inserted — no duplicate client is created."""
+    from unittest.mock import patch
+
+    from sqlalchemy.exc import IntegrityError
+
+    with Session() as s:
+        repo = BookingRepository(s)
+        # Seed the "winner" row that the concurrent writer would have inserted.
+        existing = repo.create_client(name="Priya", email="race@x.com", phone="1", address="z")
+
+    # Simulate a second caller whose commit races and loses.
+    with Session() as s:
+        repo = BookingRepository(s)
+        original_flush = s.flush
+
+        called = {"n": 0}
+
+        def fake_flush(*a, **kw):
+            called["n"] += 1
+            if called["n"] == 1:
+                raise IntegrityError("simulated", {}, Exception())
+            return original_flush(*a, **kw)
+
+        with patch.object(s, "flush", fake_flush):
+            result = repo.get_or_create_client(
+                name="Priya", email="race@x.com", phone="1", address="z"
+            )
+
+    assert result.id == existing.id
+    with Session() as s:
+        assert s.query(Client).count() == 1
+
+
 def test_returning_contact_is_reused(Session):
     store = BookingStore(Session)
     client = store.create_client(name="Priya", email="p@x.com", phone="1", address="z")

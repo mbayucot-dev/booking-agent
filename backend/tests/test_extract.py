@@ -10,7 +10,7 @@ def test_extracts_all_fields_from_example(example_message):
     req = _extract_with_rules(example_message)
     assert req.customer_name == "John Doe"
     assert req.service == "contact work"
-    assert req.date == "2026-06-20"  # currentDate is 2026; June 20 upcoming
+    assert req.date == "2028-12-20"
     assert req.time == "10:00"
     assert req.email == "john@example.com"
     assert req.phone == "0400000000"

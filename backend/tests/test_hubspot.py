@@ -106,7 +106,7 @@ def test_workflow_pushes_contact_after_approval(Session):
         contact_sync=sync,
     )
     message = (
-        "Create a booking for John Doe for contact work on June 20 at 10am. "
+        "Create a booking for John Doe for contact work on December 20, 2028 at 10am. "
         "Email john@example.com, phone 0400000000, address 12 Queen St Brisbane."
     )
     started = runner.start(message)

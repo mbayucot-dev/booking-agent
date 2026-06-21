@@ -164,8 +164,6 @@ test.describe("Booking flow", () => {
     const chatInput = page.getByLabel("Booking message");
     await expect(chatInput).toBeVisible();
 
-    // 2. fill() uses insertText (not keyboard events) so React's field.onChange fires
-    //    and RHF gets the value before handleSubmit validates.
     const submitBtn = page.getByRole("button", { name: "Submit" });
     await chatInput.fill("Book a house cleaning for Jane Doe on July 1st at 9am");
     await expect(chatInput).toHaveValue("Book a house cleaning for Jane Doe on July 1st at 9am");

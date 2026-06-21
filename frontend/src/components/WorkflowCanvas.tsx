@@ -25,11 +25,6 @@ export interface WorkflowCanvasProps {
   onClear?: () => void;
 }
 
-/**
- * Read-only canvas: renders the canonical workflow nodes with their live
- * statuses merged in. The graph cannot be edited (no drag / connect / add /
- * delete), but nodes are clickable to open a per-node preview panel.
- */
 export function WorkflowCanvas({
   statuses = {},
   selectedNode = null,

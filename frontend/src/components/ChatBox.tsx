@@ -16,15 +16,8 @@ type ChatForm = { message: string };
 
 const REQUIRED_MSG = "Enter a booking request to continue.";
 
-/**
- * Single-field booking form.
- *
- * Uses register() with RHF's built-in validation (no zodResolver) so that
- * handleSubmit reads element.value from the DOM ref at submit time rather than
- * from _formValues (the internal store that only updates via React's synthetic
- * onChange). This makes the form work correctly under Playwright fill() in
- * production Next.js builds where the synthetic event never fires.
- */
+// No zodResolver: handleSubmit reads element.value from the DOM ref directly —
+// synthetic onChange doesn't fire reliably under Playwright in production Next.js builds.
 export function ChatBox({ onSubmit, pending }: ChatBoxProps) {
   const {
     register,

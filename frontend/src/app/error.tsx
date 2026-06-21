@@ -5,8 +5,7 @@ import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 
-/** Route-segment error boundary: recovers an unhandled render/runtime error
- * instead of leaving a blank screen. `reset` re-renders the segment. */
+// `reset` re-renders the segment from scratch without a full page reload.
 export default function Error({
   error,
   reset,

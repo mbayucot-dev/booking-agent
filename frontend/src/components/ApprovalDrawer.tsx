@@ -50,11 +50,6 @@ const FIELDS: ReadonlyArray<[keyof ApprovalCard, string, LucideIcon]> = [
 const schema = z.object({ reason: z.string() });
 type RejectForm = z.infer<typeof schema>;
 
-/**
- * Card shown when a run is paused awaiting human approval. Renders the approval
- * card fields + the prepared actions, with Approve / Reject (RHF + zod for the
- * rejection reason).
- */
 export function ApprovalDrawer({ card, onApprove, onReject, pending }: ApprovalDrawerProps) {
   const form = useForm<RejectForm>({
     resolver: zodResolver(schema),

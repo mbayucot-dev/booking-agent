@@ -10,7 +10,6 @@ export interface RunEventLogProps {
   events: RunEvent[];
 }
 
-/** Chronological list of run_events received over the SSE stream. */
 export function RunEventLog({ events }: RunEventLogProps) {
   return (
     <div data-testid="run-event-log" className="space-y-2">

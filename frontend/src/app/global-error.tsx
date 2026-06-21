@@ -1,7 +1,6 @@
 "use client";
 
-/** Last-resort boundary for errors in the root layout itself. It REPLACES the
- * layout, so it must render its own <html>/<body> and can't rely on app styles. */
+// Replaces the root layout on error — must render its own <html>/<body>.
 export default function GlobalError({
   reset,
 }: {

@@ -32,8 +32,6 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** n8n-style node-detail view: the clicked step's status + the output it
- * contributed to state, with run-level retry when it failed. */
 export function NodeDetailPanel({
   label,
   status,

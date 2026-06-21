@@ -76,4 +76,21 @@ describe("NodeDetailPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+
+  test("shows a spinner and disables the retry button while pending", () => {
+    render(
+      <NodeDetailPanel
+        label="Execution"
+        status="failed"
+        showRetry
+        retryPending
+        onRetry={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /retry/i });
+    expect(btn).toBeDisabled();
+    // Loader2 is rendered as an SVG aria-hidden; its sibling text is still present.
+    expect(btn).toHaveTextContent(/retry from last checkpoint/i);
+  });
 });

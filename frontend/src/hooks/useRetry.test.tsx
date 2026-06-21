@@ -43,6 +43,24 @@ describe("useRetry", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["run", "run_1", "nodes"] });
   });
 
+  test("merges retry result with cached run when prior data exists", async () => {
+    // The retry endpoint returns a stripped response (empty node_statuses).
+    // The prior node statuses must be preserved so the canvas doesn't flash blank.
+    const retryResponse: RunResponse = { ...RUN, node_statuses: {} };
+    vi.spyOn(api, "retryRun").mockResolvedValue(retryResponse);
+    const qc = makeClient();
+    const prior: RunResponse = { ...RUN, node_statuses: { chat_trigger: "success" }, status: "failed" };
+    qc.setQueryData(["run", "run_1"], prior);
+
+    const { result } = renderHook(() => useRetry("run_1"), { wrapper: wrap(qc) });
+    act(() => result.current.mutate());
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const cached = qc.getQueryData<RunResponse>(["run", "run_1"]);
+    expect(cached?.node_statuses).toEqual({ chat_trigger: "success" }); // prior statuses preserved
+    expect(cached?.status).toBe("running"); // retry response status wins
+  });
+
   test("does not POST when there is no active run", async () => {
     const spy = vi.spyOn(api, "retryRun").mockResolvedValue(RUN);
     const qc = makeClient();

@@ -90,6 +90,8 @@ export default function Page() {
   const [streamEpoch, setStreamEpoch] = useState(0);
   // Node open in the preview panel (clicked on the canvas).
   const [selectedNode, setSelectedNode] = useState<NodeName | null>(null);
+  // Bumped to remount ChatBox (resetting RHF state) on "Start over".
+  const [chatKey, setChatKey] = useState(0);
 
   const startRun = useStartRun((run) => setRunId(run.run_id));
   const runQuery = useRun(runId);
@@ -121,6 +123,20 @@ export default function Page() {
   }, [runId]);
 
   const run = runQuery.data;
+
+  // True once a run reaches a terminal state — shows the "Start over" action.
+  const isTerminal =
+    run?.status === "completed" ||
+    run?.status === "escalated" ||
+    run?.status === "failed";
+
+  const handleStartOver = () => {
+    setRunId(null);
+    startRun.reset();
+    setStreamEpoch(0);
+    setSelectedNode(null);
+    setChatKey((k) => k + 1);
+  };
 
   // Merge backend node_statuses (authoritative on refetch) with the live
   // stream statuses (real-time during execution).
@@ -162,13 +178,30 @@ export default function Page() {
         <section className="flex flex-col gap-4 overflow-y-auto pr-1">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <MessageSquarePlus className="h-4 w-4 text-primary" aria-hidden="true" />
-                New booking
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <MessageSquarePlus className="h-4 w-4 text-primary" aria-hidden="true" />
+                  New booking
+                </CardTitle>
+                {isTerminal && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    onClick={handleStartOver}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                    Start over
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
-              <ChatBox onSubmit={(message) => startRun.mutate(message)} pending={startRun.isPending} />
+              <ChatBox
+                key={chatKey}
+                onSubmit={(message) => startRun.mutate(message)}
+                pending={startRun.isPending}
+              />
               {startRun.isError && (
                 <p
                   role="alert"
@@ -215,7 +248,7 @@ export default function Page() {
             <div className="space-y-2">
               <ApprovalDrawer
                 card={run.approval_card}
-                onApprove={(by) => approve.mutate(by, { onSuccess: reopenStream })}
+                onApprove={() => approve.mutate(undefined, { onSuccess: reopenStream })}
                 onReject={(reason) => reject.mutate(reason, { onSuccess: reopenStream })}
                 pending={approvalPending}
               />

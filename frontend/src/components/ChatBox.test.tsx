@@ -19,9 +19,10 @@ describe("ChatBox", () => {
   test("does not submit an empty / whitespace message", async () => {
     const onSubmit = vi.fn();
     render(<ChatBox onSubmit={onSubmit} />);
-    const button = screen.getByRole("button", { name: "Submit" });
-    expect(button).toBeDisabled();
+    // Button is always enabled; zod validation blocks onSubmit for empty input.
+    await userEvent.click(screen.getByRole("button", { name: "Submit" }));
     expect(onSubmit).not.toHaveBeenCalled();
+    await screen.findByText("Enter a booking request to continue.");
   });
 
   test("shows pending label and disables the button", () => {

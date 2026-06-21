@@ -23,7 +23,7 @@ export function useApproval(runId: string | null) {
   };
 
   const approve = useMutation({
-    mutationFn: (by?: string) => approveRun(runId as string, by),
+    mutationFn: () => approveRun(runId as string),
     onSuccess: onSettled,
   });
 

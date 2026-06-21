@@ -89,4 +89,50 @@ describe("BFF proxy", () => {
     expect(res.headers.get("content-type")).toBe("text/event-stream");
     expect(res.headers.get("x-accel-buffering")).toBe("no"); // anti-buffering forwarded
   });
+
+  describe("FRONTEND_ACCESS_KEY guard", () => {
+    afterEach(() => {
+      delete process.env.FRONTEND_ACCESS_KEY;
+    });
+
+    test("passes through when FRONTEND_ACCESS_KEY is not configured", async () => {
+      (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(new Response("{}", { status: 200 }));
+      const res = await GET(new Request("http://localhost:3000/api/v1/runs/x"), {
+        params: Promise.resolve({ path: ["runs", "x"] }),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    test("passes through when x-access-key matches FRONTEND_ACCESS_KEY", async () => {
+      process.env.FRONTEND_ACCESS_KEY = "s3cr3t-k3y";
+      (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(new Response("{}", { status: 200 }));
+      const res = await GET(
+        new Request("http://localhost:3000/api/v1/runs/x", {
+          headers: { "x-access-key": "s3cr3t-k3y" },
+        }),
+        { params: Promise.resolve({ path: ["runs", "x"] }) },
+      );
+      expect(res.status).toBe(200);
+    });
+
+    test("returns 401 when x-access-key is wrong", async () => {
+      process.env.FRONTEND_ACCESS_KEY = "s3cr3t-k3y";
+      const res = await GET(
+        new Request("http://localhost:3000/api/v1/runs/x", {
+          headers: { "x-access-key": "wrong-key" },
+        }),
+        { params: Promise.resolve({ path: ["runs", "x"] }) },
+      );
+      expect(res.status).toBe(401);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    test("returns 401 when x-access-key is missing entirely", async () => {
+      process.env.FRONTEND_ACCESS_KEY = "s3cr3t-k3y";
+      const res = await GET(new Request("http://localhost:3000/api/v1/runs/x"), {
+        params: Promise.resolve({ path: ["runs", "x"] }),
+      });
+      expect(res.status).toBe(401);
+    });
+  });
 });

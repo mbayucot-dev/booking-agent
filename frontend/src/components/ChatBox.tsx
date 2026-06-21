@@ -6,15 +6,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 export interface ChatBoxProps {
@@ -28,63 +20,61 @@ const schema = z.object({
 
 type ChatForm = z.infer<typeof schema>;
 
-/** Single-field form to submit a booking request message (RHF + zod). */
+/**
+ * Single-field booking form using RHF register() so the textarea value is
+ * read from the DOM element directly at submit time. This avoids relying on
+ * React's synthetic onChange event, which is not reliably fired for
+ * programmatic input (Playwright fill) in production Next.js builds.
+ */
 export function ChatBox({ onSubmit, pending }: ChatBoxProps) {
-  const form = useForm<ChatForm>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<ChatForm>({
     resolver: zodResolver(schema),
     defaultValues: { message: "" },
-    mode: "onSubmit",
-  });
-
-  const message = form.watch("message");
-
-  const handleSubmit = form.handleSubmit((values) => {
-    onSubmit(values.message.trim());
   });
 
   return (
-    <Form {...form}>
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <FormField
-          control={form.control}
-          name="message"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Booking message</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="Describe the booking, e.g. 'Book a plumber for Tuesday 9am for Jane Doe'"
-                  rows={3}
-                  disabled={pending}
-                  className="resize-y"
-                  {...field}
-                />
-              </FormControl>
-              <FormDescription>
-                Natural language — the agents extract the structured request.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
+    <form
+      onSubmit={handleSubmit((values) => onSubmit(values.message.trim()))}
+      className="space-y-3"
+    >
+      <div className="space-y-2">
+        <Label htmlFor="message">Booking message</Label>
+        <Textarea
+          id="message"
+          placeholder="Describe the booking, e.g. 'Book a plumber for Tuesday 9am for Jane Doe'"
+          rows={3}
+          disabled={pending}
+          className="resize-y"
+          aria-describedby="message-desc"
+          aria-invalid={!!errors.message}
+          {...register("message")}
         />
-        <Button
-          type="submit"
-          disabled={pending || message.trim().length === 0}
-          className="w-full"
-        >
-          {pending ? (
-            <>
-              <Loader2 className="animate-spin" aria-hidden="true" />
-              Starting…
-            </>
-          ) : (
-            <>
-              <Send aria-hidden="true" />
-              Submit
-            </>
-          )}
-        </Button>
-      </form>
-    </Form>
+        <p id="message-desc" className="text-[0.8rem] text-muted-foreground">
+          Natural language — the agents extract the structured request.
+        </p>
+        {errors.message && (
+          <p role="alert" className="text-[0.8rem] font-medium text-destructive">
+            {errors.message.message}
+          </p>
+        )}
+      </div>
+      <Button type="submit" disabled={pending} className="w-full">
+        {pending ? (
+          <>
+            <Loader2 className="animate-spin" aria-hidden="true" />
+            Starting…
+          </>
+        ) : (
+          <>
+            <Send aria-hidden="true" />
+            Submit
+          </>
+        )}
+      </Button>
+    </form>
   );
 }

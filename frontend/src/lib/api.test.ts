@@ -121,6 +121,19 @@ describe("api client", () => {
     expect(err.code).toBe("unknown");
   });
 
+  test("falls back gracefully when the error body is not valid JSON", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => { throw new SyntaxError("Unexpected token"); },
+    } as unknown as Response);
+
+    const err = await startRun("x").catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(503);
+    expect(err.message).toContain("503");
+  });
+
   test("retryRun POSTs to the retry endpoint", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(okResponse(run));
     await retryRun("run_123");

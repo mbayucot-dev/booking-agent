@@ -81,6 +81,12 @@ describe("parseRunEvent / reduceEvent", () => {
     expect(parseRunEvent('{"status":"running"}')).toBeNull();
   });
 
+  test("rejects non-object JSON primitives (null, numbers, strings)", () => {
+    expect(parseRunEvent("null")).toBeNull();
+    expect(parseRunEvent("42")).toBeNull();
+    expect(parseRunEvent('"a string"')).toBeNull();
+  });
+
   test("reduceEvent folds immutably", () => {
     const a: StatusMap = { foo: "idle" };
     const b = reduceEvent(a, { node: "bar", status: "running", duration_ms: null });

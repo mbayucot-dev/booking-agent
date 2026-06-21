@@ -8,6 +8,11 @@
 // Config (server-side env, NOT NEXT_PUBLIC):
 //   BOOKING_AGENT_API_URL  backend base URL (default http://localhost:8000)
 //   API_AUTH_TOKEN         bearer token; when set, added to every proxied call
+//   FRONTEND_ACCESS_KEY    when set, ALL proxy calls must carry a matching
+//                          x-access-key header — prevents unauthenticated
+//                          visitors from reaching the backend through the proxy.
+//                          Production deployments should set this and gate the
+//                          header behind a real session (NextAuth, Clerk, etc.).
 
 export const dynamic = "force-dynamic"; // never cache; required to stream SSE
 export const runtime = "nodejs"; // node streaming semantics for long-lived SSE
@@ -18,7 +23,22 @@ const HOP_BY_HOP = new Set(["host", "connection", "content-length", "transfer-en
 // Bound non-streaming requests so a hung backend can't hang the proxy forever.
 const PROXY_TIMEOUT_MS = 30_000;
 
+function checkAccessKey(request: Request): Response | null {
+  const requiredKey = process.env.FRONTEND_ACCESS_KEY;
+  if (!requiredKey) return null; // guard disabled (dev/local)
+  const provided = request.headers.get("x-access-key") ?? "";
+  // Constant-time comparison prevents timing attacks on the key.
+  if (provided.length !== requiredKey.length) return new Response(null, { status: 401 });
+  let diff = 0;
+  for (let i = 0; i < requiredKey.length; i++) {
+    diff |= provided.charCodeAt(i) ^ requiredKey.charCodeAt(i);
+  }
+  return diff !== 0 ? new Response(null, { status: 401 }) : null;
+}
+
 async function proxy(request: Request, path: string[]): Promise<Response> {
+  const denied = checkAccessKey(request);
+  if (denied) return denied;
   const backend = (process.env.BOOKING_AGENT_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
   const token = process.env.API_AUTH_TOKEN;
   const search = new URL(request.url).search;

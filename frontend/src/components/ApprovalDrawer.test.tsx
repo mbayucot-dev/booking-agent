@@ -88,4 +88,16 @@ describe("ApprovalDrawer", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
   });
+
+  test("shows 'No prepared actions' when the list is empty", () => {
+    render(
+      <ApprovalDrawer
+        card={{ ...card, prepared_actions: [] }}
+        onApprove={() => {}}
+        onReject={() => {}}
+      />,
+    );
+    expect(screen.getByText("No prepared actions.")).toBeInTheDocument();
+    expect(screen.queryByTestId("prepared-actions")).toBeNull();
+  });
 });

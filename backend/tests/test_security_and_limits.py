@@ -11,7 +11,7 @@ from app.api.v1 import api_router
 from app.core.auth import API_PRINCIPAL, require_principal
 from app.core.events import EventBus
 from app.core.exceptions import AuthError, register_exception_handlers
-from app.core.ratelimit import FixedWindowLimiter, _client_key
+from app.core.ratelimit import FixedWindowLimiter, _client_key, rate_limit_runs
 from app.graph.email import DryRunEmailSender
 from app.models import Approval
 from app.services.run_service import WorkflowRunner
@@ -125,3 +125,99 @@ def test_fixed_window_limiter_allows_then_blocks_then_recovers():
 def test_client_key_falls_back_to_anonymous():
     assert _client_key(SimpleNamespace(client=SimpleNamespace(host="1.2.3.4"))) == "1.2.3.4"
     assert _client_key(SimpleNamespace(client=None)) == "anonymous"
+
+
+def test_rate_limit_keys_by_ip_for_shared_principal(monkeypatch, Session):
+    """Shared static API_PRINCIPAL must not collapse all callers into one bucket.
+
+    When the static token is in use every authenticated request looks like the
+    same principal (``"api"``), so we must rate-limit by client IP instead."""
+    from app.core.auth import API_PRINCIPAL
+    from app.core.ratelimit import FixedWindowLimiter
+
+    hit_keys: list[str] = []
+    limiter = FixedWindowLimiter(limit=100, window_s=60)
+    orig_allow = limiter.allow
+
+    def spy_allow(key: str) -> bool:
+        hit_keys.append(key)
+        return orig_allow(key)
+
+    limiter.allow = spy_allow
+
+    req = SimpleNamespace(
+        client=SimpleNamespace(host="10.0.0.1"),
+        app=SimpleNamespace(state=SimpleNamespace(rate_limiter=limiter)),
+    )
+    settings = SimpleNamespace(rate_limit_runs=100)
+    rate_limit_runs.__wrapped__ if hasattr(rate_limit_runs, "__wrapped__") else None
+    rate_limit_runs(req, principal=API_PRINCIPAL, settings=settings)  # type: ignore[call-arg]
+    assert hit_keys == ["10.0.0.1"], "shared principal must key by IP, not by principal name"
+
+
+def test_run_records_principal(monkeypatch, Session):
+    """The initiating principal is persisted on the run row for future ownership checks."""
+    from app.models import Run
+
+    monkeypatch.setenv("API_AUTH_TOKEN", "secret")
+    c, runner = _app(Session)
+    auth = {"Authorization": "Bearer secret"}
+    r = c.post("/api/v1/runs", json={"message": GOOD_MESSAGE}, headers=auth)
+    assert r.status_code == 202
+    run_id = r.json()["run_id"]
+    runner.wait(run_id)
+    with Session() as s:
+        run = s.get(Run, run_id)
+    assert run is not None
+    assert run.principal == API_PRINCIPAL
+
+
+# --- ownership enforcement ---------------------------------------------------
+
+
+def _app_with_principal(Session, principal: str | None):
+    """Build a test app that always resolves require_principal to `principal`."""
+    from app.core.auth import require_principal
+
+    c, runner = _app(Session)
+    c.app.dependency_overrides[require_principal] = lambda: principal
+    return c, runner
+
+
+def test_ownership_blocks_wrong_principal(Session):
+    """Principal B cannot read or mutate a run owned by principal A."""
+    c_a, runner = _app_with_principal(Session, "user-a")
+    r = c_a.post("/api/v1/runs", json={"message": GOOD_MESSAGE})
+    assert r.status_code == 202
+    run_id = r.json()["run_id"]
+    runner.wait(run_id)
+
+    c_b, _ = _app_with_principal(Session, "user-b")
+    assert c_b.get(f"/api/v1/runs/{run_id}").status_code == 404
+    assert c_b.get(f"/api/v1/runs/{run_id}/nodes").status_code == 404
+    # approve/reject/retry all 404 (ownership) before the status check fires
+    assert c_b.post(f"/api/v1/runs/{run_id}/approve").status_code == 404
+    assert c_b.post(f"/api/v1/runs/{run_id}/reject").status_code == 404
+    assert c_b.post(f"/api/v1/runs/{run_id}/retry").status_code == 404
+
+
+def test_ownership_allows_correct_principal(Session):
+    """Principal A can read their own run."""
+    c, runner = _app_with_principal(Session, "user-a")
+    r = c.post("/api/v1/runs", json={"message": GOOD_MESSAGE})
+    assert r.status_code == 202
+    run_id = r.json()["run_id"]
+    runner.wait(run_id)
+    assert c.get(f"/api/v1/runs/{run_id}").status_code == 200
+
+
+def test_ownership_skipped_without_principal(Session):
+    """With no principal (dev/open mode) every caller can access any run."""
+    c_anon, runner = _app_with_principal(Session, None)
+    r = c_anon.post("/api/v1/runs", json={"message": GOOD_MESSAGE})
+    assert r.status_code == 202
+    run_id = r.json()["run_id"]
+    runner.wait(run_id)
+    # Another anon client can still read the run
+    c_other, _ = _app_with_principal(Session, None)
+    assert c_other.get(f"/api/v1/runs/{run_id}").status_code == 200

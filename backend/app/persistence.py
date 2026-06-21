@@ -22,9 +22,16 @@ from .repositories.memory import MemoryRepository
 # --- run repository convenience functions ---------------------------------
 
 
-def create_run(session, *, run_id: str, thread_id: str | None = None, raw_message: str = "") -> Run:
+def create_run(
+    session,
+    *,
+    run_id: str,
+    thread_id: str | None = None,
+    raw_message: str = "",
+    principal: str | None = None,
+) -> Run:
     return RunRepository(session).create(
-        run_id=run_id, thread_id=thread_id, raw_message=raw_message
+        run_id=run_id, thread_id=thread_id, raw_message=raw_message, principal=principal
     )
 
 

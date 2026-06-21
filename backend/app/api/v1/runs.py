@@ -41,37 +41,59 @@ def _response(view: RunView) -> RunResponse:
     )
 
 
+def _check_ownership(caller: str | None, view: RunView) -> None:
+    """Raise NotFoundError when a known principal requests another principal's run.
+
+    Both sides must be non-None for enforcement; unauthenticated (dev) callers
+    always pass so open deployments remain fully functional."""
+    if caller and view.principal and caller != view.principal:
+        raise NotFoundError("Run not found")
+
+
 @router.post("", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
 def start_run(
     body: StartRunRequest,
     runner: WorkflowRunner = Depends(get_runner),
+    principal: str | None = Depends(require_principal),
     _: None = Depends(rate_limit_runs),
 ) -> RunResponse:
-    run_id = runner.submit_start(body.message)
+    run_id = runner.submit_start(body.message, principal=principal)
     return RunResponse(run_id=run_id, status=RunStatus.running.value)
 
 
 @router.get("/{run_id}", response_model=RunResponse)
-def get_run(run_id: str, runner: WorkflowRunner = Depends(get_runner)) -> RunResponse:
+def get_run(
+    run_id: str,
+    runner: WorkflowRunner = Depends(get_runner),
+    principal: str | None = Depends(require_principal),
+) -> RunResponse:
     view = runner.get(run_id)
     if view is None:
         raise NotFoundError("Run not found")
+    _check_ownership(principal, view)
     return _response(view)
 
 
 @router.get("/{run_id}/nodes", response_model=list[NodeDetail])
-def run_nodes(run_id: str, runner: WorkflowRunner = Depends(get_runner)) -> list[NodeDetail]:
+def run_nodes(
+    run_id: str,
+    runner: WorkflowRunner = Depends(get_runner),
+    principal: str | None = Depends(require_principal),
+) -> list[NodeDetail]:
     """Per-node execution detail (status + produced output) for the clickable
     node-preview panel."""
-    if runner.get(run_id) is None:
-        raise NotFoundError("Run not found")
-    return [NodeDetail(**d) for d in runner.node_details(run_id)]
-
-
-def _require_paused(run_id: str, runner: WorkflowRunner) -> None:
     view = runner.get(run_id)
     if view is None:
         raise NotFoundError("Run not found")
+    _check_ownership(principal, view)
+    return [NodeDetail(**d) for d in runner.node_details(run_id)]
+
+
+def _require_paused(run_id: str, runner: WorkflowRunner, caller: str | None = None) -> None:
+    view = runner.get(run_id)
+    if view is None:
+        raise NotFoundError("Run not found")
+    _check_ownership(caller, view)
     if view.status != RunStatus.paused.value:
         raise ConflictError("Run is not awaiting approval")
 
@@ -87,7 +109,7 @@ def approve_run(
     runner: WorkflowRunner = Depends(get_runner),
     principal: str | None = Depends(require_principal),
 ) -> RunResponse:
-    _require_paused(run_id, runner)
+    _require_paused(run_id, runner, caller=principal)
     decision = decision or ApprovalDecision()
     # The authenticated principal is the recorded actor; a client-supplied `by`
     # is only a fallback when auth is disabled (dev), never a trusted identity.
@@ -106,7 +128,7 @@ def reject_run(
     runner: WorkflowRunner = Depends(get_runner),
     principal: str | None = Depends(require_principal),
 ) -> RunResponse:
-    _require_paused(run_id, runner)
+    _require_paused(run_id, runner, caller=principal)
     decision = decision or ApprovalDecision()
     runner.submit_resume(
         run_id, approved=False, by=principal or decision.by, reason=decision.reason
@@ -114,10 +136,11 @@ def reject_run(
     return RunResponse(run_id=run_id, status=RunStatus.running.value)
 
 
-def _require_failed(run_id: str, runner: WorkflowRunner) -> None:
+def _require_failed(run_id: str, runner: WorkflowRunner, caller: str | None = None) -> None:
     view = runner.get(run_id)
     if view is None:
         raise NotFoundError("Run not found")
+    _check_ownership(caller, view)
     if view.status != RunStatus.failed.value:
         raise ConflictError("Only a failed run can be retried")
 
@@ -127,11 +150,15 @@ def _require_failed(run_id: str, runner: WorkflowRunner) -> None:
     response_model=RunResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def retry_run(run_id: str, runner: WorkflowRunner = Depends(get_runner)) -> RunResponse:
+def retry_run(
+    run_id: str,
+    runner: WorkflowRunner = Depends(get_runner),
+    principal: str | None = Depends(require_principal),
+) -> RunResponse:
     """Resume a failed run from its last checkpoint.
 
     Idempotent at the data layer (the ledger dedupes), so retrying never double-books."""
-    _require_failed(run_id, runner)
+    _require_failed(run_id, runner, caller=principal)
     runner.submit_retry(run_id)
     return RunResponse(run_id=run_id, status=RunStatus.running.value)
 
@@ -178,10 +205,16 @@ def event_stream(runner: WorkflowRunner, run_id: str):
 
 
 @router.get("/{run_id}/events")
-def stream_events(run_id: str, runner: WorkflowRunner = Depends(get_runner)):
+def stream_events(
+    run_id: str,
+    runner: WorkflowRunner = Depends(get_runner),
+    principal: str | None = Depends(require_principal),
+):
     """Server-Sent Events: live node transitions for the React Flow canvas."""
-    if runner.get(run_id) is None:
+    view = runner.get(run_id)
+    if view is None:
         raise NotFoundError("Run not found")
+    _check_ownership(principal, view)
     return StreamingResponse(
         event_stream(runner, run_id),
         media_type="text/event-stream",

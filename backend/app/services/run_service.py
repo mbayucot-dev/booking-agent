@@ -51,6 +51,7 @@ class RunView:
     node_statuses: dict[str, str] = field(default_factory=dict)
     approval_card: dict | None = None
     final_response: str | None = None
+    principal: str | None = None
 
 
 class WorkflowRunner:
@@ -128,10 +129,12 @@ class WorkflowRunner:
 
     # --- synchronous execution ---------------------------------------------
 
-    def start(self, message: str, run_id: str | None = None) -> RunView:
+    def start(
+        self, message: str, run_id: str | None = None, principal: str | None = None
+    ) -> RunView:
         run_id = run_id or uuid.uuid4().hex
         with self._sf() as session:
-            create_run(session, run_id=run_id, raw_message=message)
+            create_run(session, run_id=run_id, raw_message=message, principal=principal)
         return self._run_start(run_id, message)
 
     def _lock_for(self, run_id: str) -> threading.Lock:
@@ -175,10 +178,12 @@ class WorkflowRunner:
 
     # --- background execution (live streaming) -----------------------------
 
-    def submit_start(self, message: str, run_id: str | None = None) -> str:
+    def submit_start(
+        self, message: str, run_id: str | None = None, principal: str | None = None
+    ) -> str:
         run_id = run_id or uuid.uuid4().hex
         with self._sf() as session:
-            create_run(session, run_id=run_id, raw_message=message)
+            create_run(session, run_id=run_id, raw_message=message, principal=principal)
         self._spawn(run_id, lambda: self._run_start(run_id, message))
         return run_id
 
@@ -303,6 +308,7 @@ class WorkflowRunner:
             statuses = node_status_map(session, run_id)
             final = run.final_response
             status = run.status
+            owner = run.principal
         card = None
         if status == RunStatus.paused.value:
             snapshot = self._graph.get_state(self._config(run_id))
@@ -316,6 +322,7 @@ class WorkflowRunner:
             node_statuses=statuses,
             approval_card=card,
             final_response=final,
+            principal=owner,
         )
 
 

@@ -13,7 +13,7 @@ import time
 from fastapi import Depends, Request
 
 from ..config import Settings, get_settings
-from .auth import require_principal
+from .auth import API_PRINCIPAL, require_principal
 from .exceptions import AppError
 
 
@@ -111,6 +111,9 @@ def rate_limit_runs(
     """Dependency: reject run submission past the per-client window with 429."""
     if settings.rate_limit_runs <= 0:
         return  # disabled
-    key = principal or _client_key(request)
+    # The shared static token returns API_PRINCIPAL for everyone, so keying by it
+    # collapses all callers into one bucket. Always use IP for per-caller isolation;
+    # reserve the principal key for future per-user identity schemes.
+    key = _client_key(request) if (not principal or principal == API_PRINCIPAL) else principal
     if not _limiter(request, settings).allow(key):
         raise RateLimitError()

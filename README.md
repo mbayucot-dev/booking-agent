@@ -1,8 +1,8 @@
-# 🤖 AI Booking Workflow
+# AI Booking Workflow
 
-**A multi-agent AI platform that turns one chat message into a booking** — with
-a human-in-the-loop approval gate before any change, and a live visual view of
-the agents working.
+A multi-agent booking workflow that turns a single chat message into a confirmed
+booking — with a human-in-the-loop approval gate before any mutation runs, and a
+live visual view of agent execution.
 
 > *"Create a booking for John Doe for contact work on June 20 at 10am. Email
 > john@example.com, phone 0400000000, address 12 Queen St Brisbane."*
@@ -41,7 +41,7 @@ over **SSE** to a read-only **React Flow** canvas.
 | `validation_agent` | Hard business rules (required fields, valid email, future date) |
 | `customer_agent` | Loads long-term memory; derives the requested slot |
 | `availability_subgraph` | Finds/ranks free staff slots; bounded retry loop |
-| `job_planning_agent` | Plan the job + **pick the best cleaner** (skill / load / proximity) |
+| `job_planning_agent` | Plan the job + pick the best cleaner (skill / load / proximity) |
 | `risk_review_agent` | Flag risk (out-of-hours, unassigned) before approval |
 | `human_approval` | **Pauses** for a human; prepares (not executes) mutations |
 | `execution_agent` | The ONLY mutator — books client/contact/job/appointment |
@@ -53,7 +53,7 @@ over **SSE** to a read-only **React Flow** canvas.
 
 | Layer | Tech |
 |---|---|
-| Frontend | Next.js (App Router), shadcn/ui + Tailwind, React Flow, TanStack Query, react-hook-form + zod, lucide-react |
+| Frontend | Next.js (App Router), shadcn/ui + Tailwind, React Flow, TanStack Query, react-hook-form, lucide-react |
 | Backend | FastAPI, LangGraph (checkpointed; `interrupt()` for approval) |
 | Persistence | PostgreSQL via SQLAlchemy + Alembic |
 | Live updates | SSE over an in-process event bus |
@@ -76,6 +76,38 @@ docker compose up --build
 
 With no keys set it runs fully in **dry-run** (rule-based extraction, DB
 booking, dry-run email) — no external services required.
+
+## Local development
+
+Requires Python 3.11+ and Node 22+. Postgres runs in Docker; the API and web
+server run on the host.
+
+```bash
+make install   # pip install -e ".[dev,llm,postgres]" + npm install
+make dev-up    # docker compose up -d --wait db (Postgres)
+make migrate   # alembic upgrade head
+```
+
+Optional demo data (returning customer, occupied schedule, saved preferences):
+
+```bash
+cd backend && python -m app.seeds
+```
+
+Then in separate terminals:
+
+```bash
+make api       # uvicorn app.main:app --reload --port 8000
+make web       # npm run dev  →  http://localhost:3000
+```
+
+Drop into the database:
+
+```bash
+make db        # psql -U booking -d booking
+```
+
+Full target list: `make help` or see [Makefile](Makefile).
 
 ## API / Usage
 
@@ -105,9 +137,8 @@ curl -N localhost:8000/api/v1/runs/<run_id>/events
 # event: end
 ```
 
-**3. Inspect the paused run** — the agents stopped at the approval gate and
-prepared (but did **not** execute) the booking. Note the AI picked an available
-slot and **assigned a staff member**:
+**3. Inspect the paused run** — agents have stopped at the approval gate and
+prepared (but not executed) the booking:
 
 ```jsonc
 GET /api/v1/runs/<run_id>
@@ -140,16 +171,11 @@ curl -sX POST localhost:8000/api/v1/runs/<run_id>/approve -d '{"by":"ops@example
 
 ## Testing
 
-**Backend** (Python 3.11+):
 ```bash
-cd backend
-pytest --cov=app               # 100% coverage
-```
-
-**Frontend** (Node 22+):
-```bash
-cd frontend
-npm test && npm run typecheck   # 41 tests
+make test      # backend: pytest --cov=app (100% gate) + frontend: vitest --coverage
+make test-e2e  # Playwright end-to-end (mocked API, production build)
+make lint      # ruff check + eslint + tsc --noEmit
+make audit     # npm audit --omit=dev --audit-level=high
 ```
 
 ## Configuration
@@ -164,7 +190,7 @@ local database (default staff seeded on startup so jobs can be assigned).
 | `HUBSPOT_ACCESS_TOKEN` | Push the contact to HubSpot CRM (else dry-run) |
 | `FEATURE_HUBSPOT_SYNC` | `false` forces HubSpot dry-run even with a token (standalone testing) |
 | `SMTP_HOST` + `MAIL_FROM` | Real SMTP confirmation email (else dry-run) |
-| `LANGSMITH_API_KEY` | LangSmith **tracing** of LLM calls (else off) |
+| `LANGSMITH_API_KEY` | LangSmith tracing of LLM calls (else off) |
 | `BUSINESS_OPEN_HOUR` / `CLOSE_HOUR` | Availability search window |
 | `CORS_ORIGINS`, `ENVIRONMENT` | CORS allow-list (defaults to the local frontend; a `*` wildcard is rejected in `production` and never paired with credentials); `production` also hides docs |
 | `API_AUTH_TOKEN` | When set, every `/runs` call requires `Authorization: Bearer <token>`, and the authenticated principal — not a client-supplied `by` — is recorded as the approver. Unset → open (dev). |
@@ -181,36 +207,11 @@ storage.
 1. `pip install -e ".[llm]"` (pulls `langchain-openai` + `openai`).
 2. Put your key in `.env`: `OPENAI_API_KEY=sk-...` (optionally `OPENAI_MODEL`,
    `EMBEDDING_MODEL`).
-3. That's it — `Settings.use_real_openai` flips on, so extraction uses the model
-   (rules stay the fallback), the cleaner choice gets an LLM rationale, and
-   cleaner bios + the customer preference are embedded for semantic matching.
-   With **no** key everything degrades to the deterministic path, so tests and
-   offline dev never need a secret.
-
-### Local development
-
-**Backend** (Python 3.11+):
-```bash
-cd backend
-python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev,postgres,llm]"   # `llm` enables real OpenAI + embeddings
-alembic upgrade head           # provisions the schema (defaults to local SQLite)
-python -m app.seeds            # optional: demo clients/jobs/appointments/memories
-uvicorn app.main:app --reload --port 8000
-```
-
-The default staff fleet is seeded automatically on startup so jobs can always be
-assigned. `python -m app.seeds` additionally loads demo **clients, an occupied
-schedule, and a returning customer** (with a saved `"calm with anxious dogs"`
-preference) — idempotent, so it's safe to re-run. It's what makes the
-returning-customer memory backfill and the semantic cleaner match demoable
-end-to-end offline.
-
-**Frontend** (Node 22+):
-```bash
-cd frontend
-npm install && npm run dev      # http://localhost:3000
-```
+3. `Settings.use_real_openai` flips on: extraction uses the model (rules stay the
+   fallback), the cleaner choice gets an LLM rationale, and cleaner bios + the
+   customer preference are embedded for semantic matching. With **no** key
+   everything degrades to the deterministic path, so tests and offline dev never
+   need a secret.
 
 ## License
 
